@@ -77,14 +77,29 @@ class ActivityController: UITableViewController {
   }
 
   func fetchEvents(repo: String) {
-    let response = Observable.from([repo])
+    let response = Observable.from(["https://api.github.com/search/repositories?q=language:swift&per_page=5"])
+      .map { urlString -> URLRequest in
+        return URLRequest (url: URL(string: urlString)!)
+      }
+      .flatMap { request -> Observable<Any> in
+        return URLSession.shared.rx.json(request: request)
+      }
+      .flatMap { response -> Observable<String> in
+        guard let jsonResponse = response as? [String: Any],
+              let items = jsonResponse["items"] as? [[String: Any]] else {
+          return Observable.empty()
+        }
+        
+        return Observable.from(items.map {$0["full_name"] as! String })
+      }
       .map { urlString -> URL in
-        return URL(string: "https://api.github.com/repos/\(urlString)/events")!
+        return URL(string: "https://api.github.com/repos/\(urlString)/events?per_page=5")!
       }
       .map { [weak self] url -> URLRequest in
         var request = URLRequest(url: url)
         if let modifiedHeader = self?.lastModified.value {
-          request.addValue(modifiedHeader, forHTTPHeaderField: "Last-Modified")
+          request.addValue(modifiedHeader,
+            forHTTPHeaderField: "Last-Modified")
         }
         return request
       }
@@ -104,7 +119,7 @@ class ActivityController: UITableViewController {
         self?.processEvents(newEvents)
       })
       .disposed(by: bag)
-    
+
     response
       .filter { response, _ in
         return 200..<400 ~= response.statusCode
